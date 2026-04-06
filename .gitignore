@@ -1,0 +1,5 @@
+/atf-proxy
+/atf-proxy.exe
+/logs/
+*.log
+.DS_Store

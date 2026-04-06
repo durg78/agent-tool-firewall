@@ -1,0 +1,91 @@
+#
+# =========================
+# 1. Initialize Score
+# =========================
+#
+SecAction "id:12000,phase:4,pass,nolog,setvar:tx.prompt_injection_score=0,setvar:tx.prompt_injection_threshold=%{tx.prompt_injection_threshold}"
+
+#
+# =========================
+# 2. Normalized Detection (Core Semantic Signals)
+# =========================
+#
+SecRule RESPONSE_BODY "@rx (ignore\s+(all\s+)?previous\s+instructions|you\s+are\s+now\s+(a|an)|follow\s+these\s+instructions|act\s+as|system\s+prompt|override\s+instructions|bypass\s+rules)" \
+"id:12001,phase:4,pass,log,\
+t:none,t:urlDecodeUni,t:htmlEntityDecode,t:jsDecode,t:cssDecode,t:removeNulls,t:lowercase,\
+setvar:tx.prompt_injection_score=+5,\
+msg:'Prompt injection semantic pattern detected',\
+tag:'prompt-injection',tag:'semantic'"
+
+#
+# =========================
+# 3. Hidden HTML Comment Channel
+# =========================
+#
+SecRule RESPONSE_BODY "@rx <!--[\s\S]{0,500}?-->" \
+"id:12002,phase:4,pass,nolog,\
+setvar:tx.prompt_injection_score=+2"
+
+SecRule RESPONSE_BODY "@rx <!--[\s\S]{0,500}?(ignore|override|act\s+as|system\s+prompt|follow\s+these|bypass)[\s\S]{0,500}?-->" \
+"id:12003,phase:4,pass,log,\
+t:none,t:urlDecodeUni,t:htmlEntityDecode,t:lowercase,\
+setvar:tx.prompt_injection_score=+5,\
+msg:'Prompt injection inside HTML comment',\
+tag:'prompt-injection',tag:'html-comment'"
+
+#
+# =========================
+# 4. Hidden DOM / CSS / Accessibility
+# =========================
+#
+SecRule RESPONSE_BODY "@rx (<[^>]+(display\s*:\s*none|visibility\s*:\s*hidden|aria-hidden\s*=\s*\"?true\"?)[^>]*>)" \
+"id:12004,phase:4,pass,nolog,\
+setvar:tx.prompt_injection_score=+2"
+
+SecRule RESPONSE_BODY "@rx (<[^>]+(display\s*:\s*none|visibility\s*:\s*hidden|aria-hidden\s*=\s*\"?true\"?)[^>]*>[\s\S]{0,300}?(ignore|override|act\s+as|system\s+prompt))" \
+"id:12005,phase:4,pass,log,\
+t:none,t:htmlEntityDecode,t:lowercase,\
+setvar:tx.prompt_injection_score=+5,\
+msg:'Hidden DOM prompt injection detected',\
+tag:'prompt-injection',tag:'hidden-dom'"
+
+#
+# =========================
+# 5. HTML Attribute Injection
+# =========================
+#
+SecRule RESPONSE_BODY "@rx <[^>]+(title|alt|data-[^=]+)\s*=\s*\"[^\"]*(ignore|override|act\s+as|system\s+prompt|follow\s+instructions)[^\"]*\"" \
+"id:12006,phase:4,pass,log,\
+t:none,t:htmlEntityDecode,t:urlDecodeUni,t:lowercase,\
+setvar:tx.prompt_injection_score=+4,\
+msg:'Prompt injection via HTML attribute',\
+tag:'prompt-injection',tag:'attribute'"
+
+#
+# =========================
+# 6. Markdown / Code Block Injection
+# =========================
+#
+SecRule RESPONSE_BODY "@rx (```[\s\S]{0,500}?(act\s+as|system\s+prompt|override|ignore)|\[[^\]]+\]\([^)]+\)[\s\S]{0,200}(ignore|follow\s+instructions))" \
+"id:12007,phase:4,pass,log,\
+t:none,t:lowercase,\
+setvar:tx.prompt_injection_score=+4,\
+msg:'Prompt injection via markdown content',\
+tag:'prompt-injection',tag:'markdown'"
+
+#
+# =========================
+# 7. Obfuscation / Encoding Artifacts
+# =========================
+#
+SecRule RESPONSE_BODY "@rx (&#x[0-9a-f]+;|&#[0-9]+;|\\x[0-9a-f]{2}|\\u[0-9a-f]{4})" \
+"id:12008,phase:4,pass,nolog,\
+setvar:tx.prompt_injection_score=+2"
+
+#
+# =========================
+# 8. Final Threshold Enforcement
+# =========================
+#
+SecRule TX:prompt_injection_score "@ge %{tx.prompt_injection_threshold}" \
+"id:12009,phase:4,deny,log,status:403,msg:'Prompt injection detected (score threshold exceeded)',tag:'prompt-injection',tag:'anomaly-scoring'"

@@ -1,0 +1,7 @@
+# Rule 1: Hidden HTML comments (tolerant of whitespace and newlines)
+#SecRule RESPONSE_BODY "@rx (ignore)" \
+#  "id:10001,phase:4,log,deny,status:403,t:lowercase,msg:'Hidden prompt injection in HTML comment',tag:'atf-prompt-injection'"
+
+# ATF — Ultra-simple test rule (no regex)
+SecRule RESPONSE_BODY "@contains ignore" \
+  "id:10001,phase:4,log,deny,status:403,msg:'Test rule triggered - ignore found',tag:'atf-debug'"

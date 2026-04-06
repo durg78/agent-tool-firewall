@@ -1,0 +1,12 @@
+port: 3123
+prompt_injection_threshold: 7
+max_body_size_mb: 8
+
+logging:
+  enabled: true
+  format: JSON
+  destination: ./logs/atf-audit.log
+
+coraza:
+  response_only: true
+  rules_file: rules/custom.rules
