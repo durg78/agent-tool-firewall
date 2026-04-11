@@ -30,7 +30,7 @@ var (
 	// Regex for prompt-injection specific cleaning
 	commentRe   = regexp.MustCompile(`<!--[\s\S]*?-->`)
 	hiddenRe    = regexp.MustCompile(`(?is)<[^>]*?(display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|font-size\s*:\s*0|color\s*:\s*#ffffff|background-color\s*:\s*#ffffff|aria-hidden)[^>]*>[\s\S]*?</[^>]*>`)
-	injectionRe = regexp.MustCompile(`(?i)(ignore all previous instructions|disregard previous|new system prompt|you are now dan|override instructions|act as a helpful assistant|bypass rules|follow these instructions)`)
+	injectionRe = regexp.MustCompile(`(?i)(ignore all previous instructions|disregard previous|new system prompt|you are now [a-z]+|override instructions|act as a helpful assistant|bypass (the )?security rules|follow these instructions)`)
 	zeroWidthRe = regexp.MustCompile(`[\x{200b}\x{200c}\x{200d}\x{feff}\x{200e}\x{200f}]`)
 )
 
