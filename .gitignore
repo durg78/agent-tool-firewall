@@ -1,5 +1,9 @@
 /atf-proxy
 /atf-proxy.exe
-/logs/
+/bin/
+/logs/*
+!/logs/.gitkeep
 *.log
 .DS_Store
+.gitnexus
+/reports/
