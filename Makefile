@@ -25,7 +25,7 @@ test-coverage:
 
 # Build the application
 build:
-	go build -o bin/atf ./cmd/main.go
+	go build -o bin/atf ./cmd/atf-proxy
 
 # Clean build artifacts
 clean:
