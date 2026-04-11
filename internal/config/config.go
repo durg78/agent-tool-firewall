@@ -15,6 +15,12 @@ type Config struct {
 		Enabled     bool   `yaml:"enabled"`
 		Format      string `yaml:"format"`
 		Destination string `yaml:"destination"`
+		Rotation    struct {
+			MaxSizeMB   int `yaml:"max_size_mb"`
+			MaxBackups  int `yaml:"max_backups"`
+			MaxAgeDays  int `yaml:"max_age_days"`
+			Compress    bool `yaml:"compress"`
+		} `yaml:"rotation"`
 	} `yaml:"logging"`
 
 	Coraza struct {
@@ -24,6 +30,12 @@ type Config struct {
 
 	// Prompt injection settings
 	PromptInjectionThreshold int `yaml:"prompt_injection_threshold"`
+
+	// Security settings
+	RequestTimeoutSeconds   int `yaml:"request_timeout_seconds"`
+	ResponseTimeoutSeconds  int `yaml:"response_timeout_seconds"`
+	RateLimitPerMinute      int `yaml:"rate_limit_per_minute"`
+	EnableDebugLogging      bool `yaml:"enable_debug_logging"`
 }
 
 func Load() (*Config, error) {
@@ -46,6 +58,31 @@ func Load() (*Config, error) {
 	}
 	if c.MaxBodySizeMB == 0 {
 		c.MaxBodySizeMB = 8
+	}
+
+	// Security defaults
+	if c.RequestTimeoutSeconds == 0 {
+		c.RequestTimeoutSeconds = 30
+	}
+	if c.ResponseTimeoutSeconds == 0 {
+		c.ResponseTimeoutSeconds = 30
+	}
+	if c.RateLimitPerMinute == 0 {
+		c.RateLimitPerMinute = 60
+	}
+
+	// Logging rotation defaults
+	if c.Logging.Rotation.MaxSizeMB == 0 {
+		c.Logging.Rotation.MaxSizeMB = 100
+	}
+	if c.Logging.Rotation.MaxBackups == 0 {
+		c.Logging.Rotation.MaxBackups = 5
+	}
+	if c.Logging.Rotation.MaxAgeDays == 0 {
+		c.Logging.Rotation.MaxAgeDays = 30
+	}
+	if !c.Logging.Rotation.Compress {
+		c.Logging.Rotation.Compress = true
 	}
 
 	return &c, nil

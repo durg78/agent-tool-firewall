@@ -1,12 +1,30 @@
-port: 3123
-prompt_injection_threshold: 7
-max_body_size_mb: 8
+# ATF Proxy Configuration
 
+port: 3123
+max_body_size_mb: 8
+workers: 4
+
+# Logging configuration
 logging:
   enabled: true
-  format: JSON
+  format: json
   destination: ./logs/atf-audit.log
+  rotation:
+    max_size_mb: 100
+    max_backups: 5
+    max_age_days: 30
+    compress: true
 
+# Coraza WAF configuration
 coraza:
-  response_only: true
-  rules_file: rules/custom.rules
+  response_only: false
+  rules_file: ./rules/custom.rules
+
+# Prompt injection detection threshold (0-10, higher = more strict)
+prompt_injection_threshold: 7
+
+# Security settings
+request_timeout_seconds: 30
+response_timeout_seconds: 30
+rate_limit_per_minute: 60
+enable_debug_logging: false
