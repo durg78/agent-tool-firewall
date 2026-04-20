@@ -40,7 +40,6 @@ logging:
   destination: ` + filepath.Join(tmpDir, "logs", "atf.log") + `
 
 coraza:
-  response_only: false
   rules_file: ` + filepath.Join(tmpDir, "rules.yaml") + `
 
 prompt_injection_threshold: 7
@@ -120,7 +119,6 @@ logging:
   format: json
   destination: ` + filepath.Join(tmpDir, "logs", "atf.log") + `
 coraza:
-  response_only: false
   rules_file: ` + filepath.Join(tmpDir, "rules.yaml") + `
 `
 	err = os.WriteFile(configPath, []byte(configContent), 0644)
@@ -189,7 +187,6 @@ logging:
   format: json
   destination: ` + filepath.Join(tmpDir, "logs", "atf.log") + `
 coraza:
-  response_only: false
   rules_file: ` + filepath.Join(tmpDir, "rules.yaml") + `
 `
 	err = os.WriteFile(configPath, []byte(configContent), 0644)
@@ -259,7 +256,6 @@ logging:
   format: json
   destination: ` + filepath.Join(tmpDir, "logs", "atf.log") + `
 coraza:
-  response_only: false
   rules_file: ` + filepath.Join(tmpDir, "rules.yaml") + `
 `
 	err = os.WriteFile(configPath, []byte(configContent), 0644)
@@ -333,7 +329,6 @@ logging:
   format: json
   destination: ` + filepath.Join(tmpDir, "logs", "atf.log") + `
 coraza:
-  response_only: false
   rules_file: ` + filepath.Join(tmpDir, "rules.yaml") + `
 `
 	err = os.WriteFile(configPath, []byte(configContent), 0644)

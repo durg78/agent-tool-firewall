@@ -1,12 +1,12 @@
 package proxy
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"os"
 	"strings"
 	"sync"
@@ -19,7 +19,7 @@ import (
 
 type Handler struct {
 	cfg         *config.Config
-	coraza      *coraza.WAF
+	waf         *coraza.WAF
 	httpClient  *http.Client
 	rateLimiter *RateLimiter
 }
@@ -147,7 +147,8 @@ func NewHandler() (http.Handler, error) {
 		return nil, err
 	}
 
-	c, err := coraza.New(cfg)
+	// Create WAF with both response and request protection
+	w, err := coraza.New(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +195,7 @@ func NewHandler() (http.Handler, error) {
 
 	return &Handler{
 		cfg:         cfg,
-		coraza:      c,
+		waf:         w,
 		httpClient:  httpClient,
 		rateLimiter: rateLimiter,
 	}, nil
@@ -264,20 +265,65 @@ func getClientIP(r *http.Request) string {
 }
 
 func (h *Handler) handleHTTP(w http.ResponseWriter, r *http.Request) {
+	// Read request body if present for inspection
+	var requestBody []byte
+	if r.Body != nil && r.ContentLength > 0 {
+		var err error
+		requestBody, err = io.ReadAll(r.Body)
+		if err != nil {
+			log.Printf("Failed to read request body: %v", err)
+			http.Error(w, "Failed to read request", http.StatusBadRequest)
+			return
+		}
+// Replace the body for forwarding
+		r.Body = io.NopCloser(bytes.NewReader(requestBody))
+	}
+
+	// Request protection check using Coraza WAF
+	if h.waf.IsRequestEnabled() {
+		checkResult := h.waf.ProcessRequestHeaders(r)
+
+		if checkResult.Blocked {
+			// Request blocked - don't proceed
+			log.Printf("REQUEST BLOCKED: %s", checkResult.Message)
+			http.Error(w, checkResult.Message, http.StatusForbidden)
+			return
+		}
+
+		// Check body if present
+		if len(requestBody) > 0 {
+			bodyCheckResult := h.waf.ProcessRequestBody(r, requestBody)
+			if bodyCheckResult.Blocked {
+				log.Printf("REQUEST BLOCKED: %s", bodyCheckResult.Message)
+				http.Error(w, bodyCheckResult.Message, http.StatusForbidden)
+				return
+			}
+		}
+	}
+
 	targetReq := r.Clone(r.Context())
 	targetReq.RequestURI = ""
 
-	// Remove sensitive headers before forwarding
+	// Strip standard sensitive headers (always applied)
 	for _, h := range []string{"Authorization", "Cookie", "Set-Cookie"} {
 		targetReq.Header.Del(h)
 	}
 
+	// Set the body if we read it
+	if len(requestBody) > 0 {
+		targetReq.Body = io.NopCloser(bytes.NewReader(requestBody))
+		targetReq.ContentLength = int64(len(requestBody))
+	}
+
 	resp, err := h.httpClient.Do(targetReq)
 	if err != nil {
-		// SECURITY: Sanitize error message to prevent information leakage
-		sanitizedErr := sanitizeErrorMessage(err)
-		log.Printf("Proxy error: %v (original: %v)", sanitizedErr, err)
-		http.Error(w, sanitizedErr, http.StatusBadGateway)
+		// SECURITY: Sanitize error message to prevent information leakage (if enabled)
+		errMsg := err.Error()
+		if h.cfg.SanitizeErrorMessages {
+			errMsg = sanitizeErrorMessage(err)
+		}
+		log.Printf("Proxy error: %v (original: %v)", errMsg, err)
+		http.Error(w, errMsg, http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
@@ -292,8 +338,12 @@ func (h *Handler) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	// Enforce response body size limit
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		sanitizedErr := sanitizeErrorMessage(err)
-		log.Printf("Failed to read response: %v", sanitizedErr)
+		// SECURITY: Don't leak internal error details (if sanitization enabled)
+		errMsg := err.Error()
+		if h.cfg.SanitizeErrorMessages {
+			errMsg = sanitizeErrorMessage(err)
+		}
+		log.Printf("Failed to read response: %v", errMsg)
 		http.Error(w, "Failed to read response", http.StatusBadGateway)
 		return
 	}
@@ -308,7 +358,8 @@ func (h *Handler) handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 	body = sanitizer.Sanitize(body)
 
-	blocked, msg, err := h.coraza.ProcessResponseBody(body)
+	// Process response body through Coraza for prompt injection detection
+	interruption, msg, err := h.waf.ProcessResponseBody(body, resp.StatusCode)
 	if err != nil {
 		// SECURITY: Don't leak internal error details
 		log.Printf("Coraza processing error: %v", err)
@@ -316,7 +367,7 @@ func (h *Handler) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if blocked {
+	if interruption {
 		log.Printf("🚫 BLOCKED: %s", msg)
 
 		statusCode := http.StatusForbidden
@@ -360,10 +411,13 @@ func (h *Handler) handleCONNECT(w http.ResponseWriter, r *http.Request) {
 
 	targetConn, err := net.DialTimeout("tcp", r.Host, 30*time.Second)
 	if err != nil {
-		// SECURITY: Sanitize error message
-		sanitizedErr := sanitizeErrorMessage(err)
-		log.Printf("CONNECT error: %v (original: %v)", sanitizedErr, err)
-		http.Error(w, sanitizedErr, http.StatusBadGateway)
+		// SECURITY: Sanitize error message (if enabled)
+		errMsg := err.Error()
+		if h.cfg.SanitizeErrorMessages {
+			errMsg = sanitizeErrorMessage(err)
+		}
+		log.Printf("CONNECT error: %v (original: %v)", errMsg, err)
+		http.Error(w, errMsg, http.StatusBadGateway)
 		return
 	}
 	defer targetConn.Close()
@@ -391,44 +445,35 @@ func (h *Handler) handleCONNECT(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Bidirectional copy with timeout
-	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go func() {
 		io.Copy(targetConn, clientConn)
-		close(done)
+		wg.Done()
 	}()
 
 	go func() {
 		io.Copy(clientConn, targetConn)
+		wg.Done()
+	}()
+
+	// Wait for either side to close, then clean up
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
 		close(done)
 	}()
 
-	// Wait for connection to close or timeout
 	select {
 	case <-done:
-		// Connection closed normally
+		// One side closed — close both ends and exit
+		targetConn.Close()
+		clientConn.Close()
 	case <-time.After(30 * time.Minute):
-		// Long timeout for long-lived connections
+		// Timeout — force close both ends
 		targetConn.Close()
 		clientConn.Close()
 	}
 }
 
-// DumpRequestForDebugging safely dumps a request for debugging (only when enabled)
-func (h *Handler) DumpRequestForDebugging(r *http.Request) ([]byte, error) {
-	if !h.cfg.EnableDebugLogging {
-		return nil, fmt.Errorf("debug logging disabled")
-	}
-	return httputil.DumpRequestOut(r, true)
-}
 
-// GetRequestStats returns current rate limiter stats (for monitoring)
-func (h *Handler) GetRequestStats() map[string]interface{} {
-	h.rateLimiter.mu.Lock()
-	defer h.rateLimiter.mu.Unlock()
-
-	return map[string]interface{}{
-		"active_clients": len(h.rateLimiter.requests),
-		"limit":          h.rateLimiter.limit,
-		"window":         h.rateLimiter.window.String(),
-	}
-}

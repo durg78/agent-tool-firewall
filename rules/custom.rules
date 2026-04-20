@@ -89,3 +89,38 @@ setvar:tx.prompt_injection_score=+2"
 #
 SecRule TX:prompt_injection_score "@ge %{tx.prompt_injection_threshold}" \
 "id:12009,phase:4,deny,log,status:403,msg:'Prompt injection detected (score threshold exceeded)',tag:'prompt-injection',tag:'anomaly-scoring'"
+
+#
+# =========================
+# 9. Request Sensitive Data Detection
+# Detect sensitive data in outgoing requests
+#
+
+# JWT Token Detection
+SecRule REQUEST_HEADERS:Authorization "@rx ^Bearer eyJ" \
+"id:900001,phase:1,pass,log,tag:'sensitive-data',tag:'jwt',msg:'JWT token detected in outgoing request'"
+
+SecRule REQUEST_HEADERS:Authorization "@rx ^eyJ[A-Za-z0-9_-]*\.eyJ" \
+"id:900002,phase:1,pass,log,tag:'sensitive-data',tag:'jwt',msg:'JWT token detected in outgoing request'"
+
+# API Key Detection
+SecRule REQUEST_HEADERS:X-API-Key "@rx ^sk-[a-zA-Z0-9]{20,}" \
+"id:900003,phase:1,pass,log,tag:'sensitive-data',tag:'api_key',msg:'API key detected in outgoing request'"
+
+SecRule REQUEST_HEADERS:X-API-Key "@rx ^api_[a-zA-Z0-9]{20,}" \
+"id:900004,phase:1,pass,log,tag:'sensitive-data',tag:'api_key',msg:'API key detected in outgoing request'"
+
+SecRule REQUEST_HEADERS:X-API-Key "@rx ^sk_(live|test)_[a-zA-Z0-9]{20,}" \
+"id:900005,phase:1,pass,log,tag:'sensitive-data',tag:'api_key',msg:'API key detected in outgoing request'"
+
+# Basic Auth Detection
+SecRule REQUEST_HEADERS:Authorization "@rx ^Basic [A-Za-z0-9+/=]+" \
+"id:900006,phase:1,pass,log,tag:'sensitive-data',tag:'basic_auth',msg:'Basic auth credentials detected in outgoing request'"
+
+# Bearer Token Detection (non-JWT)
+SecRule REQUEST_HEADERS:Authorization "@rx ^Bearer [A-Za-z0-9_-]{20,}" \
+"id:900007,phase:1,pass,log,tag:'sensitive-data',tag:'bearer_token',msg:'Bearer token detected in outgoing request'"
+
+# Cookie Header with potential tokens
+SecRule REQUEST_HEADERS:Cookie "@rx (session|token|auth|jwt)=[" \
+"id:900008,phase:1,pass,log,tag:'sensitive-data',tag:'cookie',msg:'Potential token in cookie header'"

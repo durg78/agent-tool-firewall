@@ -9,7 +9,6 @@ import (
 type Config struct {
 	Port          int    `yaml:"port"`
 	MaxBodySizeMB int    `yaml:"max_body_size_mb"`
-	Workers       int    `yaml:"workers"`
 
 	Logging struct {
 		Enabled     bool   `yaml:"enabled"`
@@ -23,19 +22,35 @@ type Config struct {
 		} `yaml:"rotation"`
 	} `yaml:"logging"`
 
-	Coraza struct {
-		ResponseOnly bool   `yaml:"response_only"`
-		RulesFile    string `yaml:"rules_file"`
-	} `yaml:"coraza"`
+	Coraza CorazaConfig `yaml:"coraza"`
 
 	// Prompt injection settings
 	PromptInjectionThreshold int `yaml:"prompt_injection_threshold"`
 
 	// Security settings
-	RequestTimeoutSeconds   int `yaml:"request_timeout_seconds"`
-	ResponseTimeoutSeconds  int `yaml:"response_timeout_seconds"`
-	RateLimitPerMinute      int `yaml:"rate_limit_per_minute"`
-	EnableDebugLogging      bool `yaml:"enable_debug_logging"`
+	RequestTimeoutSeconds    int  `yaml:"request_timeout_seconds"`
+	ResponseTimeoutSeconds   int  `yaml:"response_timeout_seconds"`
+	RateLimitPerMinute       int  `yaml:"rate_limit_per_minute"`
+	EnableDebugLogging       bool `yaml:"enable_debug_logging"`
+	SanitizeErrorMessages    bool `yaml:"sanitize_error_messages"`
+
+	// Request protection settings (outbound from agent perspective)
+	RequestProtection struct {
+		Enabled     bool                      `yaml:"enabled"`
+		Whitelist   []RequestWhitelistEntry   `yaml:"whitelist"`
+	} `yaml:"request_protection"`
+}
+
+// CorazaConfig holds WAF-specific settings
+type CorazaConfig struct {
+	RulesFile string `yaml:"rules_file"`
+}
+
+// RequestWhitelistEntry defines a whitelisted destination for outgoing requests
+type RequestWhitelistEntry struct {
+	URLPattern     string  `yaml:"url_pattern"`
+	AllowedRuleIDs []int   `yaml:"allowed_rule_ids"`
+	Description   string   `yaml:"description"`
 }
 
 func Load() (*Config, error) {

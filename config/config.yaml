@@ -17,7 +17,6 @@ logging:
 
 # Coraza WAF configuration
 coraza:
-  response_only: false
   rules_file: ./rules/custom.rules
 
 # Prompt injection detection threshold (0-10, higher = more strict)
@@ -28,3 +27,94 @@ request_timeout_seconds: 30
 response_timeout_seconds: 30
 rate_limit_per_minute: 60
 enable_debug_logging: false
+sanitize_error_messages: true
+
+# =============================================================================
+# REQUEST PROTECTION CONFIGURATION
+# =============================================================================
+# Protects against sensitive data leakage in outgoing requests.
+# When enabled, all outgoing requests are checked for sensitive data via
+# SecLang rules (IDs 900001-900008). The whitelist specifies which destinations
+# are allowed to receive data matching specific rule IDs.
+#
+# SecLang Rule IDs for sensitive data:
+#   900001 - JWT token (Bearer eyJ)
+#   900002 - JWT token (eyJ pattern)
+#   900003 - API key (sk- prefix)
+#   900004 - API key (api_ prefix)
+#   900005 - API key (sk_live_ or sk_test_ prefix)
+#   900006 - Basic auth credentials
+#   900007 - Bearer token (non-JWT)
+#   900008 - Potential token in cookie header
+#
+# Pattern Types:
+#   - wildcard domain: "*.example.com" (matches any subdomain)
+#   - wildcard path: "example.com/*" (matches any path on domain)
+#   - regex: "re:^https://..." (full regex pattern)
+#   - exact/substring: "api.example.com" (literal match)
+# =============================================================================
+request_protection:
+  enabled: true
+
+  # Service presets (commonly needed services)
+  # Uncomment and customize these for your environment.
+  whitelist:
+    # OpenAI API
+    - url_pattern: "api.openai.com/*"
+      allowed_rule_ids: [900001, 900002, 900007]
+      description: "OpenAI API"
+
+    # Anthropic API
+    - url_pattern: "api.anthropic.com/*"
+      allowed_rule_ids: [900003, 900004, 900005]
+      description: "Anthropic Claude API"
+
+    # Google AI API
+    - url_pattern: "generativelanguage.googleapis.com/*"
+      allowed_rule_ids: [900003, 900004, 900005, 900007]
+      description: "Google Generative Language API"
+
+    # Cohere API
+    - url_pattern: "api.cohere.com/*"
+      allowed_rule_ids: [900003, 900004, 900005]
+      description: "Cohere API"
+
+    # GitHub API
+    - url_pattern: "api.github.com/*"
+      allowed_rule_ids: [900001, 900002, 900007]
+      description: "GitHub API"
+
+    # Slack API
+    - url_pattern: "slack.com/*"
+      allowed_rule_ids: [900001, 900002, 900006, 900007]
+      description: "Slack API"
+
+    # Notion API
+    - url_pattern: "api.notion.com/*"
+      allowed_rule_ids: [900001, 900002, 900007]
+      description: "Notion API"
+
+    # Discord API
+    - url_pattern: "discord.com/*"
+      allowed_rule_ids: [900001, 900002, 900006, 900007]
+      description: "Discord API"
+
+    # AWS APIs (broad wildcard for all AWS services)
+    - url_pattern: "amazonaws.com/*"
+      allowed_rule_ids: [900001, 900002, 900006, 900007]
+      description: "AWS Services"
+
+    # Stripe API
+    - url_pattern: "api.stripe.com/*"
+      allowed_rule_ids: [900001, 900002, 900006, 900007]
+      description: "Stripe API"
+
+    # Custom regex example: all your company subdomains
+    # - url_pattern: "re:^https://[a-z0-9-]+\\.mycompany\\.com/.*"
+    #   allowed_rule_ids: [900001, 900002, 900006, 900007]
+    #   description: "All mycompany subdomains"
+
+    # Custom regex example: Google OAuth domain
+    # - url_pattern: "re:^https://oauth2\\.google\\.com/.*"
+    #   allowed_rule_ids: [900001, 900002, 900007]
+    #   description: "Google OAuth"

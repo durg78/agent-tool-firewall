@@ -11,24 +11,26 @@ help:
 
 # Run all tests
 test:
-	go test -v ./...
+	@go test ./...
+	@echo "Running end-to-end tests..."
+	@bash ./run_tests.sh
 
 # Run tests with verbose output
 test-verbose:
-	go test -v -race ./...
+	@go test -v -race ./...
 
 # Run tests with coverage
 test-coverage:
-	go test -v -coverprofile=coverage.out ./...
-	go tool cover -html=coverage.out -o coverage.html
+	@go test -v -coverprofile=coverage.out ./...
+	@go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
 # Build the application
 build:
-	go build -o bin/atf ./cmd/atf-proxy
+	@go build -trimpath -ldflags="-s -w" -o bin/atf-proxy ./cmd/atf-proxy
 
 # Clean build artifacts
 clean:
-	rm -rf bin/
-	rm -f coverage.out coverage.html
-	rm -rf logs/
+	@rm -rf bin/
+	@rm -f coverage.out coverage.html
+	@rm -rf logs/
