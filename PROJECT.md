@@ -20,7 +20,7 @@ Agent → ATF (port 3123) → Internet
 
 **Data flow (HTTP requests):**
 1. `handleHTTP` reads request body into memory
-2. Coraza WAF inspects request headers for sensitive data (JWTs, API keys)
+2. Coraza WAF inspects request headers, query parameters, and body for sensitive data (AWS keys, GitHub tokens, Stripe keys, database URLs, private keys, etc.)
 3. If request protection is enabled, checks destination against whitelist
 4. Forwards request to target (strips Authorization, Cookie, Set-Cookie headers)
 5. Reads response body
@@ -90,7 +90,7 @@ request_protection:
 
 - **Coraza WAF** — OWASP ModSecurity port, runs SecLang rules on every request/response
 - **Prompt injection detection** — regex patterns strip injection attempts from response bodies
-- **Sensitive data detection** — headers scanned for JWTs, API keys; non-whitelisted destinations blocked
+- **Sensitive data detection** — headers, query parameters, and request bodies scanned for AWS keys, GitHub tokens, Stripe keys, database URLs, private keys, and more; non-whitelisted destinations blocked
 - **Header stripping** — Authorization, Cookie, Set-Cookie removed from forwarded requests
 - **Response header filtering** — Set-Cookie, X-Powered-By, Server stripped from responses
 - **Error sanitization** — file paths and IPs scrubbed from error messages to prevent info leakage
@@ -98,6 +98,8 @@ request_protection:
 - **Compression disabled** — avoids zipper attacks
 - **Body size limits** — both request and response capped at `max_body_size_mb`
 - **Rate limiting** — token bucket per client IP, configurable
+- **Cloud metadata SSRF protection** — blocks access to AWS, GCP, and Azure metadata endpoints
+- **Internal IP access prevention** — blocks requests to RFC1918 private IP ranges
 
 ## Design Decisions
 
@@ -144,14 +146,14 @@ Requests to non-whitelisted destinations containing sensitive data are **blocked
 - Exact/substring: `api.example.com` for literal matches
 
 **Service Presets:**
-The default config includes presets for common services (OpenAI, Anthropic, GitHub, Slack, Notion, Discord, AWS, Stripe). Customize or add your own as needed.
+The default config includes presets for auth endpoints that legitimately need credentials (OpenAI, Anthropic, GitHub, Slack, Stripe). All other services (search engines, StackOverflow, debugging tools, etc.) are denied for sensitive data by default. Customize or add your own as needed.
 
 ## Known Limitations
 
-1. **Body inspection for sensitive data not implemented** — `ProcessRequestBody` currently only checks whitelists, not body content. Comment in `waf.go` line 197 notes this.
-2. **No HTTP/2 support** — uses `http.Client` with default transport, no ALPN negotiation.
-3. **Rate limiter is per-process** — not shared across instances; single binary only.
-4. **Regex sanitization is not perfect** — complex injection patterns may evade detection.
+1. **No HTTP/2 support** — uses `http.Client` with default transport, no ALPN negotiation.
+2. **Rate limiter is per-process** — not shared across instances; single binary only.
+3. **Regex sanitization is not perfect** — complex injection patterns may evade detection.
+4. **CONNECT tunneling has no body inspection** — HTTPS traffic goes through CONNECT tunnels with no body inspection. This is intentional — ATF operates as a transparent proxy for encrypted traffic. The agent itself handles HTTPS content.
 
 ## Build & Test
 

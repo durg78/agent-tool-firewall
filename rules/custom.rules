@@ -1,15 +1,23 @@
+# ATF (Agent-Tool-Firewall) Custom SecLang Rules
 #
-# =========================
+# This ruleset protects AI agents from two primary threats:
+# 1. Indirect prompt injection in responses (rules 12001-12009)
+# 2. Outbound sensitive data leakage from agent tool usage (rules 900001-900049)
+#
+# Key design principles:
+# - Response inspection: pass + score-based blocking (threshold at 12009)
+# - Request inspection: deny-by-default for sensitive data patterns
+# - Whitelist: only auth endpoints receive credentials (see config/config.yaml)
+# - All leakage rules scan REQUEST_HEADERS|ARGS|REQUEST_BODY
+
+# =============================================================================
+# PART 1: PROMPT INJECTION PROTECTION (Response Body, Phase 4)
+# =============================================================================
+
 # 1. Initialize Score
-# =========================
-#
 SecAction "id:12000,phase:4,pass,nolog,setvar:tx.prompt_injection_score=0,setvar:tx.prompt_injection_threshold=%{tx.prompt_injection_threshold}"
 
-#
-# =========================
 # 2. Normalized Detection (Core Semantic Signals)
-# =========================
-#
 SecRule RESPONSE_BODY "@rx (ignore\s+(all\s+)?previous\s+instructions|you\s+are\s+now\s+(a|an)|follow\s+these\s+instructions|act\s+as|system\s+prompt|override\s+instructions|bypass\s+rules)" \
 "id:12001,phase:4,pass,log,\
 t:none,t:urlDecodeUni,t:htmlEntityDecode,t:jsDecode,t:cssDecode,t:removeNulls,t:lowercase,\
@@ -17,11 +25,7 @@ setvar:tx.prompt_injection_score=+5,\
 msg:'Prompt injection semantic pattern detected',\
 tag:'prompt-injection',tag:'semantic'"
 
-#
-# =========================
 # 3. Hidden HTML Comment Channel
-# =========================
-#
 SecRule RESPONSE_BODY "@rx <!--[\s\S]{0,500}?-->" \
 "id:12002,phase:4,pass,nolog,\
 setvar:tx.prompt_injection_score=+2"
@@ -33,11 +37,7 @@ setvar:tx.prompt_injection_score=+5,\
 msg:'Prompt injection inside HTML comment',\
 tag:'prompt-injection',tag:'html-comment'"
 
-#
-# =========================
 # 4. Hidden DOM / CSS / Accessibility
-# =========================
-#
 SecRule RESPONSE_BODY "@rx (<[^>]+(display\s*:\s*none|visibility\s*:\s*hidden|aria-hidden\s*=\s*\"?true\"?)[^>]*>)" \
 "id:12004,phase:4,pass,nolog,\
 setvar:tx.prompt_injection_score=+2"
@@ -49,11 +49,7 @@ setvar:tx.prompt_injection_score=+5,\
 msg:'Hidden DOM prompt injection detected',\
 tag:'prompt-injection',tag:'hidden-dom'"
 
-#
-# =========================
 # 5. HTML Attribute Injection
-# =========================
-#
 SecRule RESPONSE_BODY "@rx <[^>]+(title|alt|data-[^=]+)\s*=\s*\"[^\"]*(ignore|override|act\s+as|system\s+prompt|follow\s+instructions)[^\"]*\"" \
 "id:12006,phase:4,pass,log,\
 t:none,t:htmlEntityDecode,t:urlDecodeUni,t:lowercase,\
@@ -61,11 +57,7 @@ setvar:tx.prompt_injection_score=+4,\
 msg:'Prompt injection via HTML attribute',\
 tag:'prompt-injection',tag:'attribute'"
 
-#
-# =========================
 # 6. Markdown / Code Block Injection
-# =========================
-#
 SecRule RESPONSE_BODY "@rx (```[\s\S]{0,500}?(act\s+as|system\s+prompt|override|ignore)|\[[^\]]+\]\([^)]+\)[\s\S]{0,200}(ignore|follow\s+instructions))" \
 "id:12007,phase:4,pass,log,\
 t:none,t:lowercase,\
@@ -73,54 +65,129 @@ setvar:tx.prompt_injection_score=+4,\
 msg:'Prompt injection via markdown content',\
 tag:'prompt-injection',tag:'markdown'"
 
-#
-# =========================
 # 7. Obfuscation / Encoding Artifacts
-# =========================
-#
 SecRule RESPONSE_BODY "@rx (&#x[0-9a-f]+;|&#[0-9]+;|\\x[0-9a-f]{2}|\\u[0-9a-f]{4})" \
 "id:12008,phase:4,pass,nolog,\
 setvar:tx.prompt_injection_score=+2"
 
-#
-# =========================
 # 8. Final Threshold Enforcement
-# =========================
-#
 SecRule TX:prompt_injection_score "@ge %{tx.prompt_injection_threshold}" \
 "id:12009,phase:4,deny,log,status:403,msg:'Prompt injection detected (score threshold exceeded)',tag:'prompt-injection',tag:'anomaly-scoring'"
 
-#
-# =========================
-# 9. Request Sensitive Data Detection
-# Detect sensitive data in outgoing requests
-#
+# =============================================================================
+# PART 2: OUTBOUND SENSITIVE DATA LEAKAGE PROTECTION (Phase 1)
+# =============================================================================
+# These rules detect sensitive data in outgoing requests from the agent.
+# They scan REQUEST_HEADERS, ARGS (query parameters), and REQUEST_BODY.
+# All rules are deny-by-default unless the destination is whitelisted.
 
-# JWT Token Detection
-SecRule REQUEST_HEADERS:Authorization "@rx ^Bearer eyJ" \
-"id:900001,phase:1,pass,log,tag:'sensitive-data',tag:'jwt',msg:'JWT token detected in outgoing request'"
+# -------------------
+# 2.1. AWS Credentials
+# -------------------
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx AKIA[0-9A-Z]{16}" \
+"id:900001,phase:1,deny,log,tag:'leak',tag:'aws',msg:'AWS Access Key ID detected in outbound request'"
 
-SecRule REQUEST_HEADERS:Authorization "@rx ^eyJ[A-Za-z0-9_-]*\.eyJ" \
-"id:900002,phase:1,pass,log,tag:'sensitive-data',tag:'jwt',msg:'JWT token detected in outgoing request'"
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx ASIA[0-9A-Z]{16}" \
+"id:900002,phase:1,deny,log,tag:'leak',tag:'aws',msg:'AWS Session Token detected in outbound request'"
 
-# API Key Detection
-SecRule REQUEST_HEADERS:X-API-Key "@rx ^sk-[a-zA-Z0-9]{20,}" \
-"id:900003,phase:1,pass,log,tag:'sensitive-data',tag:'api_key',msg:'API key detected in outgoing request'"
+# -------------------
+# 2.2. GitHub Tokens
+# -------------------
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx (ghp_|gho_|ghu_|ghs_|ghr_)_[A-Za-z0-9_]{20,}" \
+"id:900003,phase:1,deny,log,tag:'leak',tag:'github',msg:'GitHub token detected in outbound request'"
 
-SecRule REQUEST_HEADERS:X-API-Key "@rx ^api_[a-zA-Z0-9]{20,}" \
-"id:900004,phase:1,pass,log,tag:'sensitive-data',tag:'api_key',msg:'API key detected in outgoing request'"
+# -------------------
+# 2.3. GitLab Tokens
+# -------------------
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx glpat-[A-Za-z0-9]{20}" \
+"id:900004,phase:1,deny,log,tag:'leak',tag:'gitlab',msg:'GitLab token detected in outbound request'"
 
-SecRule REQUEST_HEADERS:X-API-Key "@rx ^sk_(live|test)_[a-zA-Z0-9]{20,}" \
-"id:900005,phase:1,pass,log,tag:'sensitive-data',tag:'api_key',msg:'API key detected in outgoing request'"
+# -------------------
+# 2.4. Slack Tokens (all types: xoxb, xoxp, xoya, xoxa, xoxr)
+# -------------------
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx xox[baprs]-[0-9]{6,14}-[A-Za-z0-9_-]+" \
+"id:900005,phase:1,deny,log,tag:'leak',tag:'slack',msg:'Slack token detected in outbound request'"
 
-# Basic Auth Detection
-SecRule REQUEST_HEADERS:Authorization "@rx ^Basic [A-Za-z0-9+/=]+" \
-"id:900006,phase:1,pass,log,tag:'sensitive-data',tag:'basic_auth',msg:'Basic auth credentials detected in outgoing request'"
+# -------------------
+# 2.5. Stripe Keys
+# -------------------
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx sk_(live|test)_[a-zA-Z0-9]{24,}" \
+"id:900006,phase:1,deny,log,tag:'leak',tag:'stripe',msg:'Stripe key detected in outbound request'"
 
-# Bearer Token Detection (non-JWT)
-SecRule REQUEST_HEADERS:Authorization "@rx ^Bearer [A-Za-z0-9_-]{20,}" \
-"id:900007,phase:1,pass,log,tag:'sensitive-data',tag:'bearer_token',msg:'Bearer token detected in outgoing request'"
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx rk_(live|test)_[a-zA-Z0-9]{24,}" \
+"id:900007,phase:1,deny,log,tag:'leak',tag:'stripe',msg:'Stripe restricted key detected in outbound request'"
 
-# Cookie Header with potential tokens
-SecRule REQUEST_HEADERS:Cookie "@rx (session|token|auth|jwt)=[" \
-"id:900008,phase:1,pass,log,tag:'sensitive-data',tag:'cookie',msg:'Potential token in cookie header'"
+# -------------------
+# 2.6. OpenAI Keys
+# -------------------
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx sk-(proj|svcacct)_[A-Za-z0-9]{20,}" \
+"id:900008,phase:1,deny,log,tag:'leak',tag:'openai',msg:'OpenAI key detected in outbound request'"
+
+# -------------------
+# 2.7. Anthropic Keys
+# -------------------
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx sk-ant-[A-Za-z0-9_-]{20,}" \
+"id:900009,phase:1,deny,log,tag:'leak',tag:'anthropic',msg:'Anthropic API key detected in outbound request'"
+
+# -------------------
+# 2.8. Google OAuth Refresh Tokens
+# -------------------
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx ya29\.[A-Za-z0-9_-]{20,}" \
+"id:900010,phase:1,deny,log,tag:'leak',tag:'google',msg:'Google OAuth refresh token detected in outbound request'"
+
+# -------------------
+# 2.9. Database Connection Strings
+# -------------------
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx (postgresql|postgres)://[^\s]+:[^\s]+@[^\s]+" \
+"id:900011,phase:1,deny,log,tag:'leak',tag:'database',msg:'PostgreSQL connection string detected in outbound request'"
+
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx mongodb(\+srv)?://[^\s]+:[^\s]+@[^\s]+" \
+"id:900012,phase:1,deny,log,tag:'leak',tag:'database',msg:'MongoDB connection string detected in outbound request'"
+
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx mysql://[^\s]+:[^\s]+@[^\s]+" \
+"id:900013,phase:1,deny,log,tag:'leak',tag:'database',msg:'MySQL connection string detected in outbound request'"
+
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx redis://:[^\s]+@[^\s]+" \
+"id:900014,phase:1,deny,log,tag:'leak',tag:'database',msg:'Redis connection string with password detected in outbound request'"
+
+# -------------------
+# 2.10. Private Key Material
+# -------------------
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx -----BEGIN [A-Z ]*PRIVATE KEY-----" \
+"id:900015,phase:1,deny,log,tag:'leak',tag:'private-key',msg:'Private key material detected in outbound request'"
+
+# -------------------
+# 2.11. Cloud Metadata SSRF Protection
+# -------------------
+SecRule REQUEST_URI "@rx ^/169\.254\.169\.254" \
+"id:900016,phase:1,deny,log,tag:'ssrf',tag:'cloud-metadata',msg:'Agent attempting to access AWS metadata endpoint'"
+
+SecRule REQUEST_URI "@rx metadata\.google\.internal" \
+"id:900017,phase:1,deny,log,tag:'ssrf',tag:'cloud-metadata',msg:'Agent attempting to access GCP metadata endpoint'"
+
+SecRule REQUEST_URI "@rx 169\.254\.169\.254/metadata" \
+"id:900018,phase:1,deny,log,tag:'ssrf',tag:'cloud-metadata',msg:'Agent attempting to access Azure metadata endpoint'"
+
+# -------------------
+# 2.12. Internal/Private IP Access (SSRF)
+# -------------------
+SecRule REQUEST_URI "@rx ^/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3})" \
+"id:900019,phase:1,deny,log,tag:'ssrf',tag:'internal-scan',msg:'Internal/private IP address in request URI'"
+
+# -------------------
+# 2.13. Generic Code-Context Leakage
+# -------------------
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx [\"']?(api[_-]?key|apikey)[\"']?\s*[:=]\s*[\"'][^\"']{16,}[\"']" \
+"id:900020,phase:1,deny,log,tag:'leak',tag:'code-leak',msg:'API key assignment detected in outbound request'"
+
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx [\"']?(secret[_-]?key|secret|client[_-]?secret)[\"']?\s*[:=]\s*[\"'][^\"']{8,}[\"']" \
+"id:900021,phase:1,deny,log,tag:'leak',tag:'code-leak',msg:'Secret assignment detected in outbound request'"
+
+SecRule REQUEST_HEADERS|ARGS|REQUEST_BODY "@rx [\"']?(password|passwd|pwd)[\"']?\s*[:=]\s*[\"'][^\"']{6,}[\"']" \
+"id:900022,phase:1,deny,log,tag:'leak',tag:'code-leak',msg:'Password in outbound request'"
+
+# =============================================================================
+# PART 3: RESPONSE BODY INSPECTION (Existing functionality preserved)
+# =============================================================================
+# ProcessResponseBody in waf.go handles response body inspection for prompt injection.
+# No additional rules needed here.

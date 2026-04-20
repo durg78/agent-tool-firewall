@@ -1,21 +1,28 @@
 # ATF (Agent-Tool-Firewall)
 
-A minimal, standalone, high-performance security proxy designed to protect local LLM agents from **indirect prompt injection attacks**.
+A minimal, standalone, high-performance security proxy designed to protect local LLM agents from **indirect prompt injection attacks** and **outbound sensitive data leakage**.
 
 ### The Problem
-Local LLM agents (OpenWebUI, Hermes, Claude Code, OpenClaw, etc.) make web requests to the internet. Malicious websites can return hidden instructions (comments, `display:none` text, hidden DOM elements, etc.) that the LLM will follow. Most setups have no protection at this boundary.
+
+Local LLM agents (OpenWebUI, Hermes, Claude Code, OpenClaw, etc.) make web requests to the internet. They face two primary threats:
+
+1. **Indirect Prompt Injection**: Malicious websites can return hidden instructions (comments, `display:none` text, hidden DOM elements, etc.) that the LLM will follow.
+2. **Sensitive Data Leakage**: Agents "vibe code" by reading source code, config files, and credentials, then accidentally including them in outbound requests (search queries, API calls, debugging tools). This is the most common and dangerous leakage scenario for AI agents.
 
 ### ATF's Approach
+
 ATF is a transparent HTTP/HTTPS proxy that sits between your agent and the internet:
 
 1. **Full standards-compliant proxy** — Works with standard `http_proxy` / `https_proxy` environment variables.
 2. **Pure-Go HTML Sanitizer** — Uses `bluemonday` + targeted regex to strip dangerous/hidden content while preserving readability (tables, basic formatting, etc.).
-3. **Embedded Coraza WAF** — Response-body-only inspection with powerful custom SecLang rules.
+3. **Embedded Coraza WAF** — Response-body-only inspection with powerful custom SecLang rules for prompt injection detection.
 4. **Anomaly Scoring** — Sophisticated scoring system instead of brittle pattern matching.
 5. **Configurable Threshold** — Blocking decision based on score (default ≥ 7).
 6. **Safe Forwarding** — Only clean content is returned, prefixed with `[UNTRUSTED EXTERNAL DATA …]`.
+7. **Outbound Request Protection** — Scans all outgoing requests (headers, query parameters, body) for sensitive data patterns (AWS keys, GitHub tokens, Stripe keys, database URLs, private keys, etc.) and blocks them unless the destination is whitelisted.
 
 ### Key Features
+
 - Single static Go binary (zero external dependencies)
 - Full HTTP/HTTPS proxy support (`CONNECT` method included)
 - Pure-Go implementation — no Python or external tools required
@@ -23,6 +30,7 @@ ATF is a transparent HTTP/HTTPS proxy that sits between your agent and the inter
 - Clean, readable output on safe pages (preserves tables and basic formatting)
 - JSON/OCSF-compatible audit logging
 - Designed for local LLM ecosystems
+- **Deny-by-default outbound protection** for sensitive data leakage
 
 ### Quick Start
 
@@ -45,6 +53,7 @@ export no_proxy=localhost,127.0.0.1,::1
 See [USAGE.md](USAGE.md) for detailed per-tool instructions.
 
 ### Effectiveness
-ATF provides strong protection against known indirect prompt injection vectors while maintaining low false-positive rates. The combination of aggressive sanitization and anomaly scoring makes it one of the more robust solutions available for local agentic systems.
+
+ATF provides strong protection against known indirect prompt injection vectors while maintaining low false-positive rates. The combination of aggressive sanitization, anomaly scoring, and outbound request protection makes it one of the more robust solutions available for local agentic systems.
 
 ---

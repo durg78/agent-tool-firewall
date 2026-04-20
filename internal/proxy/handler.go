@@ -275,8 +275,7 @@ func (h *Handler) handleHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to read request", http.StatusBadRequest)
 			return
 		}
-// Replace the body for forwarding
-		r.Body = io.NopCloser(bytes.NewReader(requestBody))
+	r.Body = io.NopCloser(bytes.NewReader(requestBody))
 	}
 
 	// Request protection check using Coraza WAF

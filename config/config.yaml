@@ -1,4 +1,19 @@
 # ATF Proxy Configuration
+#
+# ATF (Agent-Tool-Firewall) is a security proxy for AI agent workflows.
+# It protects against two primary threats:
+# 1. Indirect prompt injection in responses (rules 12001-12009)
+# 2. Outbound sensitive data leakage from agent tool usage (rules 900001-900022)
+#
+# Threat Model:
+# Agents "vibe code" by reading source code, config files, and credentials,
+# then accidentally including them in outbound requests (search queries, API calls,
+# debugging tools). This firewall detects and blocks such leakage.
+#
+# Design Philosophy:
+# - Response inspection: pass + score-based blocking (threshold at rule 12009)
+# - Request inspection: deny-by-default for sensitive data patterns
+# - Whitelist: only auth endpoints receive credentials
 
 port: 3123
 max_body_size_mb: 8
@@ -34,18 +49,39 @@ sanitize_error_messages: true
 # =============================================================================
 # Protects against sensitive data leakage in outgoing requests.
 # When enabled, all outgoing requests are checked for sensitive data via
-# SecLang rules (IDs 900001-900008). The whitelist specifies which destinations
+# SecLang rules (IDs 900001-900022). The whitelist specifies which destinations
 # are allowed to receive data matching specific rule IDs.
 #
-# SecLang Rule IDs for sensitive data:
-#   900001 - JWT token (Bearer eyJ)
-#   900002 - JWT token (eyJ pattern)
-#   900003 - API key (sk- prefix)
-#   900004 - API key (api_ prefix)
-#   900005 - API key (sk_live_ or sk_test_ prefix)
-#   900006 - Basic auth credentials
-#   900007 - Bearer token (non-JWT)
-#   900008 - Potential token in cookie header
+# Rule ID Reference:
+#   900001 - AWS Access Key ID (AKIA)
+#   900002 - AWS Session Token (ASIA)
+#   900003 - GitHub Token (ghp_, gho_, ghu_, ghs_, ghr_)
+#   900004 - GitLab Token (glpat-)
+#   900005 - Slack Token (xoxb-, xoxp-, etc.)
+#   900006 - Stripe Key (sk_live_, sk_test_)
+#   900007 - Stripe Restricted Key (rk_live_, rk_test_)
+#   900008 - OpenAI Key (sk-proj-, sk-svcacct-)
+#   900009 - Anthropic Key (sk-ant-)
+#   900010 - Google OAuth Refresh Token (ya29.)
+#   900011 - PostgreSQL Connection String
+#   900012 - MongoDB Connection String
+#   900013 - MySQL Connection String
+#   900014 - Redis Connection String
+#   900015 - Private Key Material (-----BEGIN PRIVATE KEY-----)
+#   900016-900018 - Cloud Metadata SSRF (AWS, GCP, Azure)
+#   900019 - Internal/Private IP Access
+#   900020-900022 - Generic Code-Context Leakage
+#
+# Whitelist Entries:
+#   Only the following services are allowed to receive credentials:
+#   - OpenAI API (allows sk-proj-, sk-svcacct-)
+#   - Anthropic API (allows sk-ant-)
+#   - Stripe API (allows sk_live_, sk_test_, rk_live_, rk_test_)
+#   - GitHub API (allows ghp_, gho_, ghu_, ghs_, ghr_)
+#   - Slack API (allows xoxb-, xoxp-, etc.)
+#
+#   All other services (search engines, StackOverflow, debugging tools, etc.)
+#   are denied for all sensitive data patterns by default.
 #
 # Pattern Types:
 #   - wildcard domain: "*.example.com" (matches any subdomain)
@@ -56,65 +92,28 @@ sanitize_error_messages: true
 request_protection:
   enabled: true
 
-  # Service presets (commonly needed services)
-  # Uncomment and customize these for your environment.
   whitelist:
-    # OpenAI API
+    # OpenAI API - allows sk-proj-, sk-svcacct-
     - url_pattern: "api.openai.com/*"
-      allowed_rule_ids: [900001, 900002, 900007]
+      allowed_rule_ids: [900008]
       description: "OpenAI API"
 
-    # Anthropic API
+    # Anthropic API - allows sk-ant-
     - url_pattern: "api.anthropic.com/*"
-      allowed_rule_ids: [900003, 900004, 900005]
+      allowed_rule_ids: [900009]
       description: "Anthropic Claude API"
 
-    # Google AI API
-    - url_pattern: "generativelanguage.googleapis.com/*"
-      allowed_rule_ids: [900003, 900004, 900005, 900007]
-      description: "Google Generative Language API"
-
-    # Cohere API
-    - url_pattern: "api.cohere.com/*"
-      allowed_rule_ids: [900003, 900004, 900005]
-      description: "Cohere API"
-
-    # GitHub API
-    - url_pattern: "api.github.com/*"
-      allowed_rule_ids: [900001, 900002, 900007]
-      description: "GitHub API"
-
-    # Slack API
-    - url_pattern: "slack.com/*"
-      allowed_rule_ids: [900001, 900002, 900006, 900007]
-      description: "Slack API"
-
-    # Notion API
-    - url_pattern: "api.notion.com/*"
-      allowed_rule_ids: [900001, 900002, 900007]
-      description: "Notion API"
-
-    # Discord API
-    - url_pattern: "discord.com/*"
-      allowed_rule_ids: [900001, 900002, 900006, 900007]
-      description: "Discord API"
-
-    # AWS APIs (broad wildcard for all AWS services)
-    - url_pattern: "amazonaws.com/*"
-      allowed_rule_ids: [900001, 900002, 900006, 900007]
-      description: "AWS Services"
-
-    # Stripe API
+    # Stripe API - allows sk_live_, sk_test_, rk_live_, rk_test_
     - url_pattern: "api.stripe.com/*"
-      allowed_rule_ids: [900001, 900002, 900006, 900007]
+      allowed_rule_ids: [900006, 900007]
       description: "Stripe API"
 
-    # Custom regex example: all your company subdomains
-    # - url_pattern: "re:^https://[a-z0-9-]+\\.mycompany\\.com/.*"
-    #   allowed_rule_ids: [900001, 900002, 900006, 900007]
-    #   description: "All mycompany subdomains"
+    # GitHub API - allows all GitHub token types
+    - url_pattern: "api.github.com/*"
+      allowed_rule_ids: [900003]
+      description: "GitHub API"
 
-    # Custom regex example: Google OAuth domain
-    # - url_pattern: "re:^https://oauth2\\.google\\.com/.*"
-    #   allowed_rule_ids: [900001, 900002, 900007]
-    #   description: "Google OAuth"
+    # Slack API - allows all Slack token types
+    - url_pattern: "slack.com/*"
+      allowed_rule_ids: [900005]
+      description: "Slack API"
