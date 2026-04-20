@@ -39,8 +39,12 @@ logging:
   destination: ./logs/atf-audit.log
 
 coraza:
-  response_only: true
   rules_file: rules/custom.rules
+
+# Request protection
+request_protection:
+  enabled: true
+  # See config.yaml for full whitelist configuration
 ```
 
 ## Testing
@@ -50,7 +54,7 @@ coraza:
 cd test/malicious && python3 -m http.server 8000
 
 # Run tests
-./test.sh
+./run_tests.sh
 ```
 
 All malicious tests should return **403 Forbidden**.
@@ -59,9 +63,14 @@ All malicious tests should return **403 Forbidden**.
 
 Written to `logs/atf-audit.log` (JSON format).
 
+Request protection events are logged with:
+- `REQUEST BLOCKED:` - Request blocked due to sensitive data
+- `REQUEST WARNING:` - Sensitive data stripped from request
+
 ## Security Notes
 
-- ATF inspects **responses only**
+- ATF inspects **responses** (prompt injection protection)
+- ATF also inspects **outgoing requests** (sensitive data leakage protection)
 - Sanitization happens before rules are applied
 - Rules are fully customizable via `rules/custom.rules`
 - No external runtime dependencies (pure Go)

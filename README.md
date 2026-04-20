@@ -1,9 +1,9 @@
 # ATF (Agent-Tool-Firewall)
 
-A minimal, standalone, high-performance outbound security proxy designed to protect local LLM agents from **indirect prompt injection attacks**.
+A minimal, standalone, high-performance security proxy designed to protect local LLM agents from **indirect prompt injection attacks**.
 
 ### The Problem
-Local LLM agents (OpenWebUI, Hermes, Claude Code, OpenClaw, etc.) make outbound web requests. Malicious websites can return hidden instructions (comments, `display:none` text, hidden DOM elements, etc.) that the LLM will follow. Most setups have no protection at this boundary.
+Local LLM agents (OpenWebUI, Hermes, Claude Code, OpenClaw, etc.) make web requests to the internet. Malicious websites can return hidden instructions (comments, `display:none` text, hidden DOM elements, etc.) that the LLM will follow. Most setups have no protection at this boundary.
 
 ### ATF's Approach
 ATF is a transparent HTTP/HTTPS proxy that sits between your agent and the internet:

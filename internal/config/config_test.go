@@ -28,7 +28,6 @@ logging:
   destination: logs/atf.log
 
 coraza:
-  response_only: false
   rules_file: rules/custom.rules
 
 prompt_injection_threshold: 8
@@ -55,17 +54,11 @@ prompt_injection_threshold: 8
 	if cfg.MaxBodySizeMB != 16 {
 		t.Errorf("Expected MaxBodySizeMB 16, got %d", cfg.MaxBodySizeMB)
 	}
-	if cfg.Workers != 4 {
-		t.Errorf("Expected Workers 4, got %d", cfg.Workers)
-	}
 	if cfg.Logging.Enabled != true {
 		t.Errorf("Expected Logging.Enabled true, got %v", cfg.Logging.Enabled)
 	}
 	if cfg.Logging.Format != "json" {
 		t.Errorf("Expected Logging.Format 'json', got %q", cfg.Logging.Format)
-	}
-	if cfg.Coraza.ResponseOnly != false {
-		t.Errorf("Expected Coraza.ResponseOnly false, got %v", cfg.Coraza.ResponseOnly)
 	}
 	if cfg.PromptInjectionThreshold != 8 {
 		t.Errorf("Expected PromptInjectionThreshold 8, got %d", cfg.PromptInjectionThreshold)
@@ -95,7 +88,6 @@ logging:
   destination: ""
 
 coraza:
-  response_only: false
   rules_file: ""
 `
 

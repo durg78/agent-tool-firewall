@@ -27,10 +27,10 @@ var (
 		return p
 	}()
 
-	// Regex for prompt-injection specific cleaning
+	// Regex for prompt-injection specific cleaning.
+	// The sanitizer aggressively strips anything with no legitimate place in an API response.
+	// Complex injection pattern detection is handled by Coraza SecLang rules.
 	commentRe   = regexp.MustCompile(`<!--[\s\S]*?-->`)
-	hiddenRe    = regexp.MustCompile(`(?is)<[^>]*?(display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0|font-size\s*:\s*0|color\s*:\s*#ffffff|background-color\s*:\s*#ffffff|aria-hidden)[^>]*>[\s\S]*?</[^>]*>`)
-	injectionRe = regexp.MustCompile(`(?i)(ignore all previous instructions|disregard previous|new system prompt|you are now [a-z]+|override instructions|act as a helpful assistant|bypass (the )?security rules|follow these instructions)`)
 	zeroWidthRe = regexp.MustCompile(`[\x{200b}\x{200c}\x{200d}\x{feff}\x{200e}\x{200f}]`)
 )
 
@@ -44,16 +44,10 @@ func Sanitize(body []byte) []byte {
 	// 1. Remove HTML comments (common hiding spot)
 	s = commentRe.ReplaceAllString(s, "")
 
-	// 2. Remove hidden elements (display:none, etc.)
-	s = hiddenRe.ReplaceAllString(s, "")
-
-	// 3. Apply bluemonday policy (strips dangerous tags/attributes, keeps tables + formatting)
+	// 2. Apply bluemonday policy (strips dangerous tags/attributes, keeps tables + formatting)
 	s = policy.Sanitize(s)
 
-	// 4. Remove known prompt injection phrases as a safety net
-	s = injectionRe.ReplaceAllString(s, "[REDACTED]")
-
-	// 5. Remove zero-width and invisible Unicode characters
+	// 3. Remove zero-width and invisible Unicode characters
 	s = zeroWidthRe.ReplaceAllString(s, "")
 
 	return []byte(s)

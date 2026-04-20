@@ -31,7 +31,7 @@ If you are interested in becoming a co-maintainer or taking a more active role i
 
 3. Run tests:
    ```bash
-   ./test.sh
+   ./run_tests.sh
    ```
 
 ### Prerequisites
@@ -90,7 +90,7 @@ cd test/malicious
 python3 -m http.server 8000
 
 # In another terminal
-./test.sh
+./run_tests.sh
 ```
 
 All malicious test cases should return **403 Forbidden**.
